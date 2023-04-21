@@ -25,10 +25,11 @@ module digital_thermometer(  input          CLK_I                               
                              input          EN_I                                    ,
                              input  [9:0]   ANALOG_IN_I                             ,
                              output [6:0]   DEGREE_O                                ,
+                             output         BUSY_O                                  ,
                              output         VALID_O                                );
 
 // ______________________________ REGISTER DECLARATION _________________________________________//
-reg                          thermo_state_machine                                   ;
+reg  [1:0]                   thermo_state_machine                                   ;
 reg  [9:0]                   analog_in_r                                            ;
 reg  [6:0]                   degree_celc_r                                          ;
 reg                          pre_en_r                                               ;
@@ -37,9 +38,11 @@ reg  [6:0]                   max_temp_r                                         
 reg  [9:0]                   convert_val_r                                          ;
 reg  [2:0]                   level_range_r                                          ;
 reg  [2:0]                   counter_r                                              ;
+reg                          busy_r                                                 ;
 //_______________________________ CONSTANT DECLARATION _________________________________________//
-localparam                   IDLE_S                   = 1'b0                        ,
-                             SHOW_TEMP_S              = 1'b1                        ;
+localparam                   IDLE_S                   = 2'b00                       ,
+                             CALC_TEMP_S              = 2'b01                       ,
+                             SHOW_TEMP_S              = 2'b10                       ;
 
 localparam                   MAX_TEMP_CELC_C          = 7'd100                      ,
                              MIN_TEMP_CELC_C          = 7'd0                        ,
@@ -54,6 +57,7 @@ wire                         en_w                                               
 assign                       DEGREE_O                 = degree_celc_r               ;
 assign                       en_w                     = EN_I                        ;
 assign                       VALID_O                  = valid_r                     ;
+assign                       BUSY_O                   = busy_r                      ;
 //_______________________________ MAIN LOGIC ___________________________________________________//
 
 always @(posedge CLK_I) begin
@@ -66,7 +70,8 @@ always @(posedge CLK_I) begin
     pre_en_r                                          <= 0                          ;
     valid_r                                           <= 0                          ;
     counter_r                                         <= 0                          ;
-    thermo_state_machine                              <= 0                          ;
+    busy_r                                            <= 0                          ;
+    thermo_state_machine                              <= IDLE_S                     ;
   end
   else begin
     pre_en_r                                          <= EN_I                       ;
@@ -75,7 +80,8 @@ always @(posedge CLK_I) begin
     IDLE_S : begin
       if(!pre_en_r & en_w) begin // posedge of EN_I
         analog_in_r                                   <= ANALOG_IN_I                ;
-        thermo_state_machine                          <= SHOW_TEMP_S                ;
+        thermo_state_machine                          <= CALC_TEMP_S                ;
+        busy_r                                        <= 1                          ;
       end
       else begin
         analog_in_r                                   <= 0                          ;
@@ -84,16 +90,20 @@ always @(posedge CLK_I) begin
       end
       valid_r                                         <= 0                          ;
     end
-
+    CALC_TEMP_S : begin
+      degree_celc_r                                   <= (analog_in_r *100 )/1023   ; // (analog_in * MAX_TEMP / 1023)
+      thermo_state_machine                            <= SHOW_TEMP_S                ;
+    end
     SHOW_TEMP_S : begin
-      if(counter_r != 3'b111) begin
+      if(counter_r != 3'b101) begin
         counter_r                                     <= counter_r + 1              ;
-        degree_celc_r                                 <= (analog_in_r /600  )       ;
+        degree_celc_r                                 <= degree_celc_r              ;
         valid_r                                       <= 1                          ;
         thermo_state_machine                          <= SHOW_TEMP_S                ;
       end
       else begin
         counter_r                                     <= 0                          ;
+        busy_r                                        <= 0                          ;
         thermo_state_machine                          <= IDLE_S                     ;
       end
     end
